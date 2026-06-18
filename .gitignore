@@ -1,0 +1,70 @@
+# ========================
+# Environment & Secrets
+# ========================
+.env
+.env.local
+.env.production
+.env.*.local
+*.pem
+*.key
+
+# ========================
+# Python
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# ========================
+# Node.js / Next.js
+# ========================
+node_modules/
+.next/
+out/
+dashboard/.next/
+dashboard/node_modules/
+dashboard/out/
+*.tsbuildinfo
+next-env.d.ts
+
+# ========================
+# AWS
+# ========================
+.aws/
+aws-credentials
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+
+# ========================
+# IDE
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ========================
+# Data (don't commit large files)
+# ========================
+data/
+*.parquet
+*.csv
+*.json.gz
