@@ -192,13 +192,13 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     run_id              VARCHAR(50) PRIMARY KEY,
     started_at          TIMESTAMP WITH TIME ZONE NOT NULL,
     completed_at        TIMESTAMP WITH TIME ZONE,
-    status              VARCHAR(20) NOT NULL DEFAULT 'running',
+    status              VARCHAR(30) NOT NULL DEFAULT 'running',
     repos_processed     INTEGER DEFAULT 0,
     total_commits       INTEGER DEFAULT 0,
     total_prs           INTEGER DEFAULT 0,
     total_issues        INTEGER DEFAULT 0,
     errors              TEXT[],
-    CONSTRAINT chk_status CHECK (status IN ('running', 'completed', 'failed'))
+    CONSTRAINT chk_status CHECK (status IN ('running', 'completed', 'failed', 'completed_with_errors'))
 );
 
 

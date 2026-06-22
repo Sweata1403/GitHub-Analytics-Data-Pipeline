@@ -3,6 +3,8 @@ GitHub REST API client with automatic rate-limit handling,
 pagination, and exponential backoff.
 """
 
+from __future__ import annotations
+
 import time
 import logging
 from typing import Any, Generator

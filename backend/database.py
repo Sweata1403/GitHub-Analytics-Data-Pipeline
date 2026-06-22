@@ -5,6 +5,8 @@ Uses asyncpg for high-performance async PostgreSQL access
 with connection pooling.
 """
 
+from __future__ import annotations
+
 import os
 import logging
 from contextlib import asynccontextmanager

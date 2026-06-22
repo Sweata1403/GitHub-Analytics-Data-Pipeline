@@ -2,6 +2,8 @@
 Commit analytics API router.
 """
 
+from __future__ import annotations
+
 from fastapi import APIRouter, Query
 
 from database import db

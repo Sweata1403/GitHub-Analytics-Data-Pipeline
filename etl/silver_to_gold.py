@@ -21,12 +21,12 @@ Deployment:
     --RDS_DATABASE         : PostgreSQL database name
 """
 
+import os
 import sys
-from awsglue.transforms import *
-from awsglue.utils import getResolvedOptions
-from awsglue.context import GlueContext
-from awsglue.job import Job
-from pyspark.context import SparkContext
+import argparse
+import logging
+from dotenv import load_dotenv
+from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import IntegerType
 
@@ -35,39 +35,51 @@ from pyspark.sql.types import IntegerType
 # Initialize Glue Context
 # =====================================================================
 
-args = getResolvedOptions(sys.argv, [
-    "JOB_NAME",
-    "S3_BUCKET",
-    "SILVER_PREFIX",
-    "RDS_CONNECTION_NAME",
-    "RDS_DATABASE",
-])
+# Load .env file from project root
+from pathlib import Path
+PROJECT_ROOT = Path(__file__).parent.parent
+load_dotenv(PROJECT_ROOT / ".env")
 
-sc = SparkContext()
-glueContext = GlueContext(sc)
-spark = glueContext.spark_session
-job = Job(glueContext)
-job.init(args["JOB_NAME"], args)
+def parse_args():
+    parser = argparse.ArgumentParser(description="Standalone PySpark Job: Silver -> Gold")
+    parser.add_argument("--s3-bucket", type=str, default=None, help="S3 bucket name (not required if local)")
+    parser.add_argument("--silver-prefix", type=str, default="silver", help="Silver path prefix")
+    parser.add_argument("--local", action="store_true", help="Run in local directory mode")
+    parser.add_argument("--rds-host", type=str, default=os.getenv("RDS_HOST", "localhost"), help="PostgreSQL host")
+    parser.add_argument("--rds-port", type=str, default=os.getenv("RDS_PORT", "5432"), help="PostgreSQL port")
+    parser.add_argument("--rds-database", type=str, default=os.getenv("RDS_DATABASE", "github_analytics"), help="PostgreSQL database")
+    parser.add_argument("--rds-username", type=str, default=os.getenv("RDS_USERNAME", "admin"), help="PostgreSQL user")
+    parser.add_argument("--rds-password", type=str, default=os.getenv("RDS_PASSWORD", ""), help="PostgreSQL password")
+    return parser.parse_args()
 
-logger = glueContext.get_logger()
+args = parse_args()
 
-S3_BUCKET = args["S3_BUCKET"]
-SILVER_PREFIX = args.get("SILVER_PREFIX", "silver")
-RDS_CONNECTION = args["RDS_CONNECTION_NAME"]
-RDS_DATABASE = args["RDS_DATABASE"]
+# Configure structured logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger("silver-to-gold")
 
+# Start Spark session
+spark = SparkSession.builder \
+    .appName("Silver-to-Gold-ETL") \
+    .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") \
+    .config("spark.sql.parquet.datetimeRebaseModeInRead", "CORRECTED") \
+    .getOrCreate()
+
+LOCAL_MODE = args.local
+S3_BUCKET = args.s3_bucket
+SILVER_PREFIX = args.silver_prefix
+
+if not LOCAL_MODE and not S3_BUCKET:
+    logger.error("Error: --s3-bucket is required unless running with --local flag")
+    sys.exit(1)
 
 # =====================================================================
 # JDBC Connection Properties
 # =====================================================================
 
-# Glue resolves JDBC URL from the Connection name
-# We get the connection info to build the JDBC URL
-connection_options = glueContext.extract_jdbc_conf(RDS_CONNECTION)
-
-JDBC_URL = connection_options.get("fullUrl", "")
-JDBC_USER = connection_options.get("user", "")
-JDBC_PASSWORD = connection_options.get("password", "")
+JDBC_URL = f"jdbc:postgresql://{args.rds_host}:{args.rds_port}/{args.rds_database}"
+JDBC_USER = args.rds_username
+JDBC_PASSWORD = args.rds_password
 
 jdbc_properties = {
     "user": JDBC_USER,
@@ -84,7 +96,11 @@ logger.info(f"JDBC URL: {JDBC_URL}")
 
 def read_silver_parquet(entity_type: str):
     """Read cleaned Parquet from Silver layer."""
-    path = f"s3://{S3_BUCKET}/{SILVER_PREFIX}/{entity_type}/"
+    if LOCAL_MODE:
+        path = f"data/{SILVER_PREFIX}/{entity_type}/"
+    else:
+        path = f"s3a://{S3_BUCKET}/{SILVER_PREFIX}/{entity_type}/"
+
     logger.info(f"Reading Silver data from: {path}")
     try:
         df = spark.read.parquet(path)
@@ -92,7 +108,7 @@ def read_silver_parquet(entity_type: str):
         logger.info(f"  Loaded {count} records for {entity_type}")
         return df
     except Exception as e:
-        logger.warn(f"  No data found for {entity_type}: {e}")
+        logger.warning(f"  No data found for {entity_type}: {e}")
         return None
 
 
@@ -402,4 +418,4 @@ logger.info("=" * 60)
 logger.info("  Silver → Gold ETL Complete!")
 logger.info("=" * 60)
 
-job.commit()
+spark.stop()

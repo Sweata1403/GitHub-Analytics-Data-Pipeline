@@ -92,9 +92,21 @@ pip install -r requirements.txt
 python ingest.py
 ```
 
-### 3. Run ETL (AWS Glue Console)
+### 3. Run ETL (Standalone PySpark)
 
-Upload `etl/bronze_to_silver.py` and `etl/silver_to_gold.py` to AWS Glue and run them.
+The ETL scripts can be run locally using standalone PySpark (without requiring AWS Glue charges).
+
+#### Run Bronze → Silver transformation locally:
+```bash
+python etl/bronze_to_silver.py --local
+```
+
+#### Run Silver → Gold transformation locally:
+```bash
+python etl/silver_to_gold.py --local
+```
+
+*Note: You can also point these scripts to AWS S3 and RDS by omitting the `--local` flag and specifying connection options (e.g. `--s3-bucket <bucket>` and `--rds-host <host>`).*
 
 ### 4. Start Backend
 
@@ -147,7 +159,7 @@ The dashboard provides real-time analytics including:
 | EC2 (t2.micro) | 750 hrs/mo | $0 |
 | S3 (< 5 GB) | 5 GB standard | $0 |
 | RDS (db.t3.micro) | 750 hrs/mo | $0 |
-| Glue ETL | Not free | ~$1.50/run |
+| PySpark ETL (Local) | Free | $0 |
 | **Vercel** | Free tier | $0 |
 
 > 💡 New AWS accounts get **$200 in credits** — more than enough for development.
