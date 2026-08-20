@@ -12,9 +12,11 @@ import logging
 from contextlib import asynccontextmanager
 
 import asyncpg
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +30,7 @@ class Database:
 
     def _build_dsn(self) -> str:
         """Build PostgreSQL connection string from env vars."""
-        host = os.getenv("RDS_HOST", "localhost")
+        host = os.getenv("RDS_HOST", "127.0.0.1")
         port = os.getenv("RDS_PORT", "5432")
         database = os.getenv("RDS_DATABASE", "github_analytics")
         username = os.getenv("RDS_USERNAME", "admin")

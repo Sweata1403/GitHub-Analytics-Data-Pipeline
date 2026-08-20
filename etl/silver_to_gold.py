@@ -58,9 +58,17 @@ args = parse_args()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("silver-to-gold")
 
+# Set HADOOP_HOME fallback for Windows if not present
+if "HADOOP_HOME" not in os.environ:
+    os.environ["HADOOP_HOME"] = str(PROJECT_ROOT)
+
+JAR_PATH = str(PROJECT_ROOT / "etl" / "postgresql-42.6.0.jar")
+
 # Start Spark session
 spark = SparkSession.builder \
     .appName("Silver-to-Gold-ETL") \
+    .config("spark.jars", JAR_PATH) \
+    .config("spark.driver.extraClassPath", JAR_PATH) \
     .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") \
     .config("spark.sql.parquet.datetimeRebaseModeInRead", "CORRECTED") \
     .getOrCreate()
@@ -166,7 +174,7 @@ def load_dim_repository():
     )
 
     # Use overwrite for dimensions (SCD Type 1 — full refresh)
-    write_to_rds(dim, "dim_repository", mode="overwrite")
+    write_to_rds(dim, "dim_repository", mode="append")
     logger.info("✓ dim_repository loaded")
 
 
@@ -211,7 +219,7 @@ def load_dim_user():
     dim_user = all_users.dropDuplicates(["login"])
     dim_user = dim_user.withColumn("etl_loaded_at", F.current_timestamp())
 
-    write_to_rds(dim_user, "dim_user", mode="overwrite")
+    write_to_rds(dim_user, "dim_user", mode="append")
     logger.info("✓ dim_user loaded")
 
 
@@ -256,7 +264,7 @@ def load_fact_commits():
         )
     )
 
-    write_to_rds(fact, "fact_commits", mode="overwrite")
+    write_to_rds(fact, "fact_commits", mode="append")
     logger.info("✓ fact_commits loaded")
 
 
@@ -306,7 +314,7 @@ def load_fact_pull_requests():
         )
     )
 
-    write_to_rds(fact, "fact_pull_requests", mode="overwrite")
+    write_to_rds(fact, "fact_pull_requests", mode="append")
     logger.info("✓ fact_pull_requests loaded")
 
 
@@ -348,7 +356,7 @@ def load_fact_issues():
         )
     )
 
-    write_to_rds(fact, "fact_issues", mode="overwrite")
+    write_to_rds(fact, "fact_issues", mode="append")
     logger.info("✓ fact_issues loaded")
 
 
@@ -360,12 +368,21 @@ def load_repo_languages():
 
     dim_repo = spark.read.jdbc(JDBC_URL, "dim_repository", properties=jdbc_properties)
 
-    # Explode the languages map into rows
+    # NOTE: Spark's JSON schema inference merges the varying per-repo language
+    # keys (JS/HTML for one repo, Python/Dockerfile for another) into one
+    # fixed STRUCT with a field per distinct language name ever seen, rather
+    # than a MapType. explode() requires ARRAY/MAP, so we rebuild a proper
+    # key -> value map from the struct's fields before exploding.
+    struct_fields = df.schema["languages"].dataType.fields
+    map_col = F.create_map(*[
+        item for f in struct_fields for item in (F.lit(f.name), F.col("languages")[f.name])
+    ])
+
     exploded = df.select(
         F.col("repository_full_name"),
         F.col("total_bytes"),
-        F.explode(F.col("languages")).alias("language", "bytes"),
-    )
+        F.explode(map_col).alias("language", "bytes"),
+    ).filter(F.col("bytes").isNotNull())  # drop languages a given repo doesn't have
 
     # Calculate percentage
     exploded = exploded.withColumn(
@@ -389,7 +406,7 @@ def load_repo_languages():
         )
     )
 
-    write_to_rds(result, "repo_languages", mode="overwrite")
+    write_to_rds(result, "repo_languages", mode="append")
     logger.info("✓ repo_languages loaded")
 
 
@@ -401,7 +418,7 @@ logger.info("=" * 60)
 logger.info("  Silver → Gold (RDS PostgreSQL) ETL Starting")
 logger.info(f"  Bucket: {S3_BUCKET}")
 logger.info(f"  Silver: {SILVER_PREFIX}/")
-logger.info(f"  RDS Connection: {RDS_CONNECTION}")
+logger.info(f"  RDS Connection: {JDBC_URL}")
 logger.info("=" * 60)
 
 # Load dimensions first (facts depend on them)

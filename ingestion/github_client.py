@@ -255,7 +255,7 @@ class GitHubClient:
             params = {"type": repo_type, "sort": sort}
         else:
             url = "/user/repos"
-            params = {"type": repo_type, "sort": sort, "affiliation": "owner"}
+            params = {"type": repo_type, "sort": sort}
 
         max_pages = (max_repos // self.per_page) + 1
         repos = self.get_all_pages(url, params=params, max_pages=max_pages)

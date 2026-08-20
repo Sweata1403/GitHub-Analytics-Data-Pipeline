@@ -77,23 +77,37 @@ if not LOCAL_MODE and not S3_BUCKET:
 # Helper Functions
 # =====================================================================
 
+import os
+import glob
+
 def read_bronze_json(entity_type: str):
     """Read raw JSON from Bronze layer as a Spark DataFrame."""
     if LOCAL_MODE:
-        path = f"data/{BRONZE_PREFIX}/{entity_type}/"
+        dir_path = os.path.join("data", BRONZE_PREFIX, entity_type)
+        json_files = glob.glob(os.path.join(dir_path, "**", "*.json"), recursive=True)
+        if not json_files:
+            logger.warning(f"  No JSON files found for {entity_type} in {dir_path}")
+            return None
+        logger.info(f"Reading {len(json_files)} Bronze JSON files for {entity_type}")
+        try:
+            df = spark.read.option("multiline", "true").json(json_files)
+            count = df.count()
+            logger.info(f"  Loaded {count} records for {entity_type}")
+            return df
+        except Exception as e:
+            logger.warning(f"  Failed to read {entity_type}: {e}")
+            return None
     else:
         path = f"s3a://{S3_BUCKET}/{BRONZE_PREFIX}/{entity_type}/"
-
-    logger.info(f"Reading Bronze data from: {path}")
-
-    try:
-        df = spark.read.option("multiline", "true").json(path)
-        count = df.count()
-        logger.info(f"  Loaded {count} records for {entity_type}")
-        return df
-    except Exception as e:
-        logger.warning(f"  No data found for {entity_type}: {e}")
-        return None
+        logger.info(f"Reading Bronze data from S3: {path}")
+        try:
+            df = spark.read.option("multiline", "true").option("recursiveFileLookup", "true").json(path)
+            count = df.count()
+            logger.info(f"  Loaded {count} records for {entity_type}")
+            return df
+        except Exception as e:
+            logger.warning(f"  No data found for {entity_type}: {e}")
+            return None
 
 
 def write_silver_parquet(df, entity_type: str, partition_cols=None):
@@ -123,7 +137,7 @@ def write_silver_parquet(df, entity_type: str, partition_cols=None):
 def transform_repositories():
     """Clean and transform repository data."""
     df = read_bronze_json("repositories")
-    if df is None or df.rdd.isEmpty():
+    if df is None or len(df.head(1)) == 0:
         return
 
     cleaned = df.select(
@@ -163,7 +177,7 @@ def transform_repositories():
 def transform_commits():
     """Clean and transform commit data."""
     df = read_bronze_json("commits")
-    if df is None or df.rdd.isEmpty():
+    if df is None or len(df.head(1)) == 0:
         return
 
     cleaned = df.select(
@@ -204,7 +218,7 @@ def transform_commits():
 def transform_pull_requests():
     """Clean and transform pull request data."""
     df = read_bronze_json("pull_requests")
-    if df is None or df.rdd.isEmpty():
+    if df is None or len(df.head(1)) == 0:
         return
 
     cleaned = df.select(
@@ -262,7 +276,7 @@ def transform_pull_requests():
 def transform_issues():
     """Clean and transform issue data."""
     df = read_bronze_json("issues")
-    if df is None or df.rdd.isEmpty():
+    if df is None or len(df.head(1)) == 0:
         return
 
     cleaned = df.select(
@@ -303,7 +317,7 @@ def transform_issues():
 def transform_contributors():
     """Clean and transform contributor data."""
     df = read_bronze_json("contributors")
-    if df is None or df.rdd.isEmpty():
+    if df is None or len(df.head(1)) == 0:
         return
 
     cleaned = df.select(
@@ -325,7 +339,7 @@ def transform_contributors():
 def transform_languages():
     """Clean and transform language data."""
     df = read_bronze_json("languages")
-    if df is None or df.rdd.isEmpty():
+    if df is None or len(df.head(1)) == 0:
         return
 
     cleaned = df.select(
