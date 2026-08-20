@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 
 import asyncpg
 from pathlib import Path
+from urllib.parse import quote_plus
 from dotenv import load_dotenv
 
 env_path = Path(__file__).resolve().parent.parent / ".env"
@@ -33,8 +34,11 @@ class Database:
         host = os.getenv("RDS_HOST", "127.0.0.1")
         port = os.getenv("RDS_PORT", "5432")
         database = os.getenv("RDS_DATABASE", "github_analytics")
-        username = os.getenv("RDS_USERNAME", "admin")
-        password = os.getenv("RDS_PASSWORD", "")
+        # URL-encode username/password: special characters like @ : / % in a
+        # raw password break parsing of the postgresql://user:pass@host URL
+        # (e.g. an '@' inside the password looks like the user/host separator).
+        username = quote_plus(os.getenv("RDS_USERNAME", "admin"))
+        password = quote_plus(os.getenv("RDS_PASSWORD", ""))
         return f"postgresql://{username}:{password}@{host}:{port}/{database}"
 
     async def connect(self):
