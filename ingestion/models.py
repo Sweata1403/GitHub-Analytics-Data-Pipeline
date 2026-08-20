@@ -5,6 +5,8 @@ These models define the structure of data as extracted from the
 GitHub API before uploading to the Bronze layer (S3).
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Any

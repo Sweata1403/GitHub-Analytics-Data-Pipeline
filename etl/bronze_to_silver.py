@@ -22,12 +22,9 @@ Deployment:
 """
 
 import sys
-from awsglue.transforms import *
-from awsglue.utils import getResolvedOptions
-from awsglue.context import GlueContext
-from awsglue.job import Job
-from awsglue.dynamicframe import DynamicFrame
-from pyspark.context import SparkContext
+import argparse
+import logging
+from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import (
     StructType,
@@ -42,51 +39,84 @@ from pyspark.sql.types import (
 
 
 # =====================================================================
-# Initialize Glue Context
+# Initialize Spark Session and Parse Arguments
 # =====================================================================
 
-args = getResolvedOptions(sys.argv, [
-    "JOB_NAME",
-    "S3_BUCKET",
-    "BRONZE_PREFIX",
-    "SILVER_PREFIX",
-])
+def parse_args():
+    parser = argparse.ArgumentParser(description="Standalone PySpark Job: Bronze -> Silver")
+    parser.add_argument("--s3-bucket", type=str, default=None, help="S3 bucket name (not required if local)")
+    parser.add_argument("--bronze-prefix", type=str, default="bronze", help="Bronze path prefix")
+    parser.add_argument("--silver-prefix", type=str, default="silver", help="Silver path prefix")
+    parser.add_argument("--local", action="store_true", help="Run in local directory mode")
+    return parser.parse_args()
 
-sc = SparkContext()
-glueContext = GlueContext(sc)
-spark = glueContext.spark_session
-job = Job(glueContext)
-job.init(args["JOB_NAME"], args)
+args = parse_args()
 
-logger = glueContext.get_logger()
+# Configure structured logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger("bronze-to-silver")
 
-S3_BUCKET = args["S3_BUCKET"]
-BRONZE_PREFIX = args.get("BRONZE_PREFIX", "bronze")
-SILVER_PREFIX = args.get("SILVER_PREFIX", "silver")
+# Start Spark session
+spark = SparkSession.builder \
+    .appName("Bronze-to-Silver-ETL") \
+    .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") \
+    .config("spark.sql.parquet.datetimeRebaseModeInRead", "CORRECTED") \
+    .getOrCreate()
+
+LOCAL_MODE = args.local
+S3_BUCKET = args.s3_bucket
+BRONZE_PREFIX = args.bronze_prefix
+SILVER_PREFIX = args.silver_prefix
+
+if not LOCAL_MODE and not S3_BUCKET:
+    logger.error("Error: --s3-bucket is required unless running with --local flag")
+    sys.exit(1)
 
 
 # =====================================================================
 # Helper Functions
 # =====================================================================
 
+import os
+import glob
+
 def read_bronze_json(entity_type: str):
     """Read raw JSON from Bronze layer as a Spark DataFrame."""
-    path = f"s3://{S3_BUCKET}/{BRONZE_PREFIX}/{entity_type}/"
-    logger.info(f"Reading Bronze data from: {path}")
-
-    try:
-        df = spark.read.option("multiline", "true").json(path)
-        count = df.count()
-        logger.info(f"  Loaded {count} records for {entity_type}")
-        return df
-    except Exception as e:
-        logger.warn(f"  No data found for {entity_type}: {e}")
-        return None
+    if LOCAL_MODE:
+        dir_path = os.path.join("data", BRONZE_PREFIX, entity_type)
+        json_files = glob.glob(os.path.join(dir_path, "**", "*.json"), recursive=True)
+        if not json_files:
+            logger.warning(f"  No JSON files found for {entity_type} in {dir_path}")
+            return None
+        logger.info(f"Reading {len(json_files)} Bronze JSON files for {entity_type}")
+        try:
+            df = spark.read.option("multiline", "true").json(json_files)
+            count = df.count()
+            logger.info(f"  Loaded {count} records for {entity_type}")
+            return df
+        except Exception as e:
+            logger.warning(f"  Failed to read {entity_type}: {e}")
+            return None
+    else:
+        path = f"s3a://{S3_BUCKET}/{BRONZE_PREFIX}/{entity_type}/"
+        logger.info(f"Reading Bronze data from S3: {path}")
+        try:
+            df = spark.read.option("multiline", "true").option("recursiveFileLookup", "true").json(path)
+            count = df.count()
+            logger.info(f"  Loaded {count} records for {entity_type}")
+            return df
+        except Exception as e:
+            logger.warning(f"  No data found for {entity_type}: {e}")
+            return None
 
 
 def write_silver_parquet(df, entity_type: str, partition_cols=None):
     """Write cleaned DataFrame as Parquet to Silver layer."""
-    path = f"s3://{S3_BUCKET}/{SILVER_PREFIX}/{entity_type}/"
+    if LOCAL_MODE:
+        path = f"data/{SILVER_PREFIX}/{entity_type}/"
+    else:
+        path = f"s3a://{S3_BUCKET}/{SILVER_PREFIX}/{entity_type}/"
+
     logger.info(f"Writing Silver data to: {path}")
 
     writer = df.write.mode("overwrite")
@@ -107,7 +137,7 @@ def write_silver_parquet(df, entity_type: str, partition_cols=None):
 def transform_repositories():
     """Clean and transform repository data."""
     df = read_bronze_json("repositories")
-    if df is None or df.rdd.isEmpty():
+    if df is None or len(df.head(1)) == 0:
         return
 
     cleaned = df.select(
@@ -147,7 +177,7 @@ def transform_repositories():
 def transform_commits():
     """Clean and transform commit data."""
     df = read_bronze_json("commits")
-    if df is None or df.rdd.isEmpty():
+    if df is None or len(df.head(1)) == 0:
         return
 
     cleaned = df.select(
@@ -188,7 +218,7 @@ def transform_commits():
 def transform_pull_requests():
     """Clean and transform pull request data."""
     df = read_bronze_json("pull_requests")
-    if df is None or df.rdd.isEmpty():
+    if df is None or len(df.head(1)) == 0:
         return
 
     cleaned = df.select(
@@ -246,7 +276,7 @@ def transform_pull_requests():
 def transform_issues():
     """Clean and transform issue data."""
     df = read_bronze_json("issues")
-    if df is None or df.rdd.isEmpty():
+    if df is None or len(df.head(1)) == 0:
         return
 
     cleaned = df.select(
@@ -287,7 +317,7 @@ def transform_issues():
 def transform_contributors():
     """Clean and transform contributor data."""
     df = read_bronze_json("contributors")
-    if df is None or df.rdd.isEmpty():
+    if df is None or len(df.head(1)) == 0:
         return
 
     cleaned = df.select(
@@ -309,7 +339,7 @@ def transform_contributors():
 def transform_languages():
     """Clean and transform language data."""
     df = read_bronze_json("languages")
-    if df is None or df.rdd.isEmpty():
+    if df is None or len(df.head(1)) == 0:
         return
 
     cleaned = df.select(
@@ -344,4 +374,4 @@ logger.info("=" * 60)
 logger.info("  Bronze → Silver ETL Complete!")
 logger.info("=" * 60)
 
-job.commit()
+spark.stop()

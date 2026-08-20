@@ -5,14 +5,19 @@ Uses asyncpg for high-performance async PostgreSQL access
 with connection pooling.
 """
 
+from __future__ import annotations
+
 import os
 import logging
 from contextlib import asynccontextmanager
 
 import asyncpg
+from pathlib import Path
+from urllib.parse import quote_plus
 from dotenv import load_dotenv
 
-load_dotenv()
+env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +31,14 @@ class Database:
 
     def _build_dsn(self) -> str:
         """Build PostgreSQL connection string from env vars."""
-        host = os.getenv("RDS_HOST", "localhost")
+        host = os.getenv("RDS_HOST", "127.0.0.1")
         port = os.getenv("RDS_PORT", "5432")
         database = os.getenv("RDS_DATABASE", "github_analytics")
-        username = os.getenv("RDS_USERNAME", "admin")
-        password = os.getenv("RDS_PASSWORD", "")
+        # URL-encode username/password: special characters like @ : / % in a
+        # raw password break parsing of the postgresql://user:pass@host URL
+        # (e.g. an '@' inside the password looks like the user/host separator).
+        username = quote_plus(os.getenv("RDS_USERNAME", "admin"))
+        password = quote_plus(os.getenv("RDS_PASSWORD", ""))
         return f"postgresql://{username}:{password}@{host}:{port}/{database}"
 
     async def connect(self):
