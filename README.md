@@ -1,209 +1,206 @@
-<p align="center">
-  <h1 align="center">📊 GitHub Analytics Data Pipeline</h1>
-  <p align="center">
-    A production-grade data pipeline that ingests, processes, and visualizes GitHub repository data using AWS Lakehouse Architecture with Medallion pattern.
-  </p>
-</p>
+# GitHub Analytics Data Pipeline
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" />
-  <img src="https://img.shields.io/badge/AWS-Lakehouse-FF9900?style=for-the-badge&logo=amazon-aws&logoColor=white" />
-  <img src="https://img.shields.io/badge/PySpark-Glue_ETL-E25A1C?style=for-the-badge&logo=apache-spark&logoColor=white" />
-  <img src="https://img.shields.io/badge/PostgreSQL-Star_Schema-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" />
-  <img src="https://img.shields.io/badge/FastAPI-Backend-009688?style=for-the-badge&logo=fastapi&logoColor=white" />
-  <img src="https://img.shields.io/badge/Next.js-Dashboard-000000?style=for-the-badge&logo=next.js&logoColor=white" />
-  <img src="https://img.shields.io/badge/Vercel-Deployed-000000?style=for-the-badge&logo=vercel&logoColor=white" />
-</p>
+> An end-to-end data engineering pipeline that ingests GitHub activity via the GitHub API,
+> processes it through a **Bronze → Silver → Gold** Medallion architecture using PySpark,
+> stores it in a PostgreSQL star schema, and serves it through a FastAPI backend to a
+> Next.js analytics dashboard.
+
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
+![PySpark](https://img.shields.io/badge/PySpark-3.x-E25A1C?logo=apachespark&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.111+-009688?logo=fastapi&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791?logo=postgresql&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
 
-## 🏗️ Architecture
+## What This Project Does
 
-This pipeline follows the **Medallion Architecture** (Bronze → Silver → Gold):
+This pipeline answers questions like:
+- Which repositories are most active?
+- Who are the top contributors across all tracked repos?
+- How has commit activity trended over time?
+- What languages dominate the codebase?
+- How are pull requests and issues distributed?
 
-```
-GitHub REST API
-       ↓
-EC2 (Python Ingestion Layer)
-       ↓
-S3 (Bronze — Raw JSON)
-       ↓
-AWS Glue ETL (PySpark)
-       ↓
-S3 (Silver — Clean Parquet)
-       ↓
-AWS Glue ETL (PySpark)
-       ↓
-RDS PostgreSQL (Gold — Star Schema)
-       ↓
-FastAPI (Backend API)
-       ↓
-Next.js Dashboard (Vercel)
-```
-
-### Data Flow
-
-| Layer | Storage | Format | Purpose |
-|-------|---------|--------|---------|
-| **Bronze** | S3 | Raw JSON | Exact copy of GitHub API responses |
-| **Silver** | S3 | Parquet | Cleaned, deduplicated, typed data |
-| **Gold** | RDS PostgreSQL | Star Schema | Analytics-ready dimensional model |
+It does this by pulling raw data from the GitHub API, cleaning and deduplicating it with
+PySpark, loading it into a relational star schema, exposing it through a REST API, and
+rendering it in an interactive dashboard.
 
 ---
 
-## 📁 Project Structure
+## Architecture
 
 ```
-├── ingestion/          # Python scripts to extract data from GitHub API
-├── etl/                # AWS Glue PySpark jobs (Bronze→Silver→Gold)
-├── database/           # PostgreSQL star schema DDL & migrations
-├── backend/            # FastAPI analytics API
-├── dashboard/          # Next.js frontend dashboard
-├── infrastructure/     # Terraform IaC (reference)
-├── scripts/            # Setup, teardown & utility scripts
-└── docs/               # Architecture & setup documentation
+GitHub API
+    │
+    ▼
+┌──────────────────────────────────────────┐
+│  INGESTION  (ingestion/ingest.py)        │
+│  Repos · Commits · PRs · Issues ·        │
+│  Contributors · Languages                │
+└──────────────────────────────────────────┘
+    │  Raw JSON
+    ▼
+┌──────────────────────────────────────────┐
+│  BRONZE  data/bronze/                    │
+│  Hive-partitioned: year=/month=/day=/    │
+│  Immutable raw source of truth           │
+└──────────────────────────────────────────┘
+    │  PySpark ETL
+    ▼
+┌──────────────────────────────────────────┐
+│  SILVER  data/silver/                    │
+│  Deduplicated · Type-enforced · Parquet  │
+└──────────────────────────────────────────┘
+    │  PySpark + JDBC
+    ▼
+┌──────────────────────────────────────────┐
+│  GOLD  PostgreSQL (Star Schema)          │
+│  dim_repository · dim_user · dim_date   │
+│  fact_commits · fact_pull_requests ·    │
+│  fact_issues · repo_languages            │
+└──────────────────────────────────────────┘
+    │  asyncpg pool
+    ▼
+┌──────────────────────────────────────────┐
+│  BACKEND  FastAPI (backend/)             │
+│  REST API · Swagger UI · Health check    │
+└──────────────────────────────────────────┘
+    │  HTTP
+    ▼
+┌──────────────────────────────────────────┐
+│  DASHBOARD  Next.js + Recharts           │
+│  Interactive charts · Live data          │
+└──────────────────────────────────────────┘
 ```
 
 ---
 
-## 🚀 Quick Start
+## Tech Stack
 
-### Prerequisites
+| Component | Technology |
+|---|---|
+| Ingestion | Python, GitHub REST API |
+| Bronze → Silver | PySpark (deduplication, type enforcement) |
+| Silver → Gold | PySpark + JDBC (PostgreSQL) |
+| Database | PostgreSQL (star schema / Kimball) |
+| Backend API | FastAPI, asyncpg, Pydantic |
+| Dashboard | Next.js 16, React 19, Recharts |
+| Cloud DB (optional) | AWS RDS PostgreSQL / Neon |
+| Backend hosting (optional) | Render |
+| Dashboard hosting (optional) | Vercel |
 
-- Python 3.11+
-- Node.js 18+
-- AWS Account (Free Tier eligible)
-- GitHub Personal Access Token
+---
 
-### 1. Clone & Configure
+## Project Structure
+
+```
+GitHub-Analytics-Data-Pipeline/
+├── ingestion/          # GitHub API ingestion scripts
+├── etl/                # PySpark Bronze→Silver and Silver→Gold jobs
+├── database/           # schema.sql + seed_dim_date.sql
+├── backend/            # FastAPI app + asyncpg database layer
+├── dashboard/          # Next.js + Recharts frontend
+├── docs/               # Architecture.md + Runbook.md
+│   └── full_documentation.md
+├── data/               # Bronze JSON + Silver Parquet (gitignored)
+└── .env                # Credentials (gitignored — never commit)
+```
+
+---
+
+## Quickstart (Local)
+
+### 1. Clone and configure
 
 ```bash
-git clone https://github.com/your-username/GitHub-Analytics-Data-Pipeline.git
+git clone https://github.com/YOUR_USERNAME/GitHub-Analytics-Data-Pipeline.git
 cd GitHub-Analytics-Data-Pipeline
-cp .env.example .env
-# Edit .env with your GitHub token and AWS credentials
+cp .env.example .env   # fill in GITHUB_TOKEN and RDS_* values
 ```
 
-### 2. Run Ingestion
+### 2. Set up PostgreSQL
 
 ```bash
-cd ingestion
-pip install -r requirements.txt
-python ingest.py
+psql -U postgres -c "CREATE DATABASE github_analytics;"
+psql -U postgres -d github_analytics -f database/schema.sql
+psql -U postgres -d github_analytics -f database/seed_dim_date.sql
 ```
 
-### 3. Run ETL (Standalone PySpark)
+### 3. Run the pipeline
 
-The ETL scripts can be run locally using standalone PySpark (without requiring AWS Glue charges).
-
-#### Run Bronze → Silver transformation locally:
 ```bash
-python etl/bronze_to_silver.py --local
+# Ingest from GitHub API
+python ingestion/ingest.py --local
+
+# Bronze → Silver
+python etl/bronze_to_silver.py
+
+# Truncate Gold tables (required before each ETL run)
+psql -U postgres -d github_analytics -c \
+  "TRUNCATE TABLE repo_languages, fact_issues, fact_pull_requests, fact_commits, dim_user, dim_repository RESTART IDENTITY CASCADE;"
+
+# Silver → Gold
+python etl/silver_to_gold.py
 ```
 
-#### Run Silver → Gold transformation locally:
-```bash
-python etl/silver_to_gold.py --local
-```
-
-*Note: You can also point these scripts to AWS S3 and RDS by omitting the `--local` flag and specifying connection options (e.g. `--s3-bucket <bucket>` and `--rds-host <host>`).*
-
-### 4. Start Backend
+### 4. Start backend
 
 ```bash
 cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+python -m pip install -r requirements.txt
+python -m uvicorn main:app --reload --port 8000
+# Visit: http://localhost:8000/api/v1/health
+# Swagger: http://localhost:8000/api/v1/docs
 ```
 
-### 5. Start Dashboard
+### 5. Start dashboard
 
 ```bash
 cd dashboard
 npm install
 npm run dev
+# Visit: http://localhost:3000
 ```
 
 ---
 
-## 📊 Dashboard Preview
+## Environment Variables
 
-The dashboard provides real-time analytics including:
+| Variable | Description |
+|---|---|
+| `GITHUB_TOKEN` | GitHub fine-grained PAT with repo read permissions |
+| `GITHUB_USERNAMES` | Comma-separated list of GitHub usernames to track |
+| `RDS_HOST` | PostgreSQL host (`127.0.0.1` for local) |
+| `RDS_PORT` | PostgreSQL port (default `5432`) |
+| `RDS_DATABASE` | Database name (`github_analytics`) |
+| `RDS_USERNAME` | PostgreSQL username |
+| `RDS_PASSWORD` | PostgreSQL password |
 
-- **Commit Activity Timeline** — Daily/weekly commit patterns
-- **Language Distribution** — Breakdown across repositories
-- **PR Metrics** — Time-to-merge trends, open vs closed
-- **Top Contributors** — Ranked by activity
-- **Repository Comparison** — Side-by-side metrics
-- **Issue Tracking** — Resolution time & label analysis
+Dashboard also uses `dashboard/.env.local`:
 
----
-
-## 🗄️ Star Schema (Gold Layer)
-
-| Table | Type | Description |
-|-------|------|-------------|
-| `dim_repository` | Dimension | Repository metadata |
-| `dim_user` | Dimension | GitHub user profiles |
-| `dim_date` | Dimension | Calendar dimension (2020–2030) |
-| `fact_commits` | Fact | Individual commit records |
-| `fact_pull_requests` | Fact | Pull request lifecycle data |
-| `fact_issues` | Fact | Issue lifecycle data |
-
----
-
-## 💰 Cost Estimation (AWS)
-
-| Service | Free Tier | Est. Cost |
-|---------|-----------|-----------|
-| EC2 (t2.micro) | 750 hrs/mo | $0 |
-| S3 (< 5 GB) | 5 GB standard | $0 |
-| RDS (db.t3.micro) | 750 hrs/mo | $0 |
-| PySpark ETL (Local) | Free | $0 |
-| **Vercel** | Free tier | $0 |
-
-> 💡 New AWS accounts get **$200 in credits** — more than enough for development.
-
----
-
-## 🛑 Stopping Services (Avoid Charges!)
-
-```bash
-# Stop all AWS resources when not in use
-bash scripts/teardown.sh
-
-# Bring everything back up
-bash scripts/startup.sh
-
-# Check current AWS spend
-bash scripts/cost_check.sh
+```
+NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 ```
 
 ---
 
-## 📄 Documentation
+## Documentation
 
-- [Architecture Deep Dive](docs/architecture.md)
-- [AWS Setup Guide (Console)](docs/aws_setup_guide.md)
-- [Data Dictionary](docs/data_dictionary.md)
-
----
-
-## 🛠️ Tech Stack
-
-| Component | Technology |
-|-----------|------------|
-| Ingestion | Python 3.11, boto3, requests |
-| Data Lake | Amazon S3 (JSON, Parquet) |
-| ETL | AWS Glue, PySpark |
-| Data Warehouse | RDS PostgreSQL 15 |
-| Backend API | FastAPI, asyncpg |
-| Frontend | Next.js 14, Recharts |
-| Deployment | AWS EC2, Vercel |
-| IaC | Terraform (reference) |
+- [Architecture](docs/Architecture.md) — pipeline design, layer breakdown, design decisions
+- [Runbook](docs/Runbook.md) — how to run locally, deploy to cloud, and recover from failures
+- [Full Documentation](docs/full_documentation.md) — deep-dive into every component
 
 ---
 
-## 📝 License
+## Windows Users
 
-This project is licensed under the MIT License.
+PySpark on Windows requires `winutils.exe`. See the [Runbook](docs/Runbook.md#pyspark-wont-start-on-windows)
+for the exact setup steps.
+
+---
+
+## License
+
+MIT
